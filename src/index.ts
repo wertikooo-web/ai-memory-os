@@ -19,7 +19,8 @@ async function main() {
   await bot.api.setMyCommands([
     { command: "start", description: "Активировать AI Memory OS" },
     { command: "events", description: "Показать события" },
-    { command: "last", description: "Показать последнюю запись" }
+    { command: "last", description: "Показать последнюю запись" },
+    { command: "delete_last", description: "Удалить последнюю запись" }
   ]);
 
   console.log("Starting AI Memory OS Telegram bot...");

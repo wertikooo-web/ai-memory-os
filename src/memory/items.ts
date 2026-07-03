@@ -29,3 +29,17 @@ export async function getLastMemoryItem(userId: string) {
     }
   });
 }
+
+export async function deleteLastMemoryItem(userId: string) {
+  const lastItem = await getLastMemoryItem(userId);
+
+  if (!lastItem) {
+    return null;
+  }
+
+  await prisma.memoryItem.delete({
+    where: { id: lastItem.id }
+  });
+
+  return lastItem;
+}

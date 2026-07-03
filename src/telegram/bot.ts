@@ -1,12 +1,14 @@
 import { Bot, Keyboard } from "grammy";
 import { config } from "../config.js";
 import { listLifeEvents } from "../memory/events.js";
-import { getLastMemoryItem, saveTextMemoryItem } from "../memory/items.js";
+import { deleteLastMemoryItem, getLastMemoryItem, saveTextMemoryItem } from "../memory/items.js";
 import { getOrCreateUser } from "../memory/users.js";
 
 const mainKeyboard = new Keyboard()
   .text("/events")
   .text("/last")
+  .row()
+  .text("/delete_last")
   .resized()
   .persistent();
 
@@ -62,6 +64,27 @@ export function createTelegramBot() {
 
     const lines = events.map((event) => `${event.name} — ${event._count.memoryItems} записей`);
     await ctx.reply(["События:", "", ...lines].join("\n"), {
+      reply_markup: mainKeyboard
+    });
+  });
+
+  bot.command("delete_last", async (ctx) => {
+    if (!ctx.from) {
+      await ctx.reply("Не удалось определить пользователя.");
+      return;
+    }
+
+    const user = await getOrCreateUser(ctx.from);
+    const deletedItem = await deleteLastMemoryItem(user.id);
+
+    if (!deletedItem) {
+      await ctx.reply("Память пока пустая.", {
+        reply_markup: mainKeyboard
+      });
+      return;
+    }
+
+    await ctx.reply("🗑 Последняя запись удалена.", {
       reply_markup: mainKeyboard
     });
   });
