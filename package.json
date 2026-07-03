@@ -1,0 +1,32 @@
+{
+  "name": "ai-memory-os",
+  "version": "0.1.0",
+  "description": "Personal Memory Engine MVP with Telegram as the first interface.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "prisma generate && tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev"
+  },
+  "keywords": [
+    "memory",
+    "telegram",
+    "prisma",
+    "typescript"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@prisma/client": "^6.11.1",
+    "dotenv": "^17.0.1",
+    "grammy": "^1.37.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "prisma": "^6.11.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}
