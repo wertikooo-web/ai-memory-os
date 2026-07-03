@@ -3,16 +3,18 @@ import { config } from "../config.js";
 import { listLifeEvents } from "../memory/events.js";
 import { ingestTelegramText } from "../memory/ingest.js";
 import { deleteLastMemoryItem, getLastMemoryItem } from "../memory/items.js";
-import { listOpenCycles } from "../memory/openCycles.js";
+import { closeLastOpenCycle, listOpenCycles } from "../memory/openCycles.js";
+import { reclassifyLastMemoryItem } from "../memory/reclassify.js";
 import { getOrCreateUser } from "../memory/users.js";
-
-type OpenCycleListItem = Awaited<ReturnType<typeof listOpenCycles>>[number];
 
 const mainKeyboard = new Keyboard()
   .text("/events")
   .text("/last")
   .row()
   .text("/open_cycles")
+  .text("/reclassify_last")
+  .row()
+  .text("/close_cycle")
   .text("/delete_last")
   .resized()
   .persistent();
@@ -95,6 +97,61 @@ export function createTelegramBot() {
     });
   });
 
+  bot.command("reclassify_last", async (ctx) => {
+    if (!ctx.from) {
+      await ctx.reply("Не удалось определить пользователя.");
+      return;
+    }
+
+    const user = await getOrCreateUser(ctx.from);
+    const result = await reclassifyLastMemoryItem(user.id);
+
+    if (result.status === "not_configured") {
+      await ctx.reply("LLM-классификация сейчас выключена или не настроен OPENAI_API_KEY.", {
+        reply_markup: mainKeyboard
+      });
+      return;
+    }
+
+    if (result.status === "empty") {
+      await ctx.reply("Память пока пустая. Нечего переклассифицировать.", {
+        reply_markup: mainKeyboard
+      });
+      return;
+    }
+
+    await ctx.reply([
+      "♻️ Последняя запись переклассифицирована.",
+      `🧠 Теперь это: ${formatOpenCycleType(result.openCycle.type)}.`,
+      `Заголовок: ${result.openCycle.title}`,
+      result.openCycle.context ? `Контекст: ${result.openCycle.context}` : null,
+      result.openCycle.reason ? `Почему: ${result.openCycle.reason}` : null
+    ].filter(Boolean).join("\n"), {
+      reply_markup: mainKeyboard
+    });
+  });
+
+  bot.command("close_cycle", async (ctx) => {
+    if (!ctx.from) {
+      await ctx.reply("Не удалось определить пользователя.");
+      return;
+    }
+
+    const user = await getOrCreateUser(ctx.from);
+    const closed = await closeLastOpenCycle(user.id);
+
+    if (!closed) {
+      await ctx.reply("Открытых циклов пока нет.", {
+        reply_markup: mainKeyboard
+      });
+      return;
+    }
+
+    await ctx.reply(`✅ Закрыл цикл: ${closed.title}`, {
+      reply_markup: mainKeyboard
+    });
+  });
+
   bot.command("delete_last", async (ctx) => {
     if (!ctx.from) {
       await ctx.reply("Не удалось определить пользователя.");
@@ -158,7 +215,7 @@ export function createTelegramBot() {
   return bot;
 }
 
-function formatOpenCycleLine(index: number, cycle: OpenCycleListItem): string {
+function formatOpenCycleLine(index: number, cycle: Awaited<ReturnType<typeof listOpenCycles>>[number]): string {
   const parts = [
     `${index}. ${formatOpenCycleType(cycle.type)}: ${cycle.title}`,
     cycle.context ? `Контекст: ${cycle.context}` : null,

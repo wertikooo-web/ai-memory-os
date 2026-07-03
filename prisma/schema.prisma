@@ -115,10 +115,12 @@ model OpenCycle {
   rawOutput        Json?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
+  closedAt         DateTime?
   user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   memoryItem       MemoryItem?   @relation(fields: [memoryItemId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
+  @@index([userId, closedAt, createdAt])
   @@index([type])
   @@index([dueDate])
 }

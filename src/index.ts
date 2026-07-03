@@ -21,6 +21,8 @@ async function main() {
     { command: "events", description: "Показать события" },
     { command: "last", description: "Показать последнюю запись" },
     { command: "open_cycles", description: "Показать открытые циклы" },
+    { command: "reclassify_last", description: "Заново разобрать последнюю запись" },
+    { command: "close_cycle", description: "Закрыть последний открытый цикл" },
     { command: "delete_last", description: "Удалить последнюю запись" }
   ]);
 

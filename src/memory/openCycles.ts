@@ -10,34 +10,85 @@ export async function saveOpenCycle(params: {
   rawOutput?: unknown;
 }) {
   return prisma.openCycle.create({
-    data: {
-      userId: params.userId,
-      memoryItemId: params.memoryItemId,
-      type: toPrismaOpenCycleType(params.draft.type),
-      title: params.draft.title,
-      context: params.draft.context,
-      area: params.draft.area,
-      urgency: params.draft.urgency,
-      importance: params.draft.importance,
-      energy: params.draft.energy,
-      estimatedMinutes: params.draft.estimatedMinutes,
-      dueDate: parseDueDate(params.draft.dueDate),
-      reason: params.draft.reason,
-      rawInput: params.rawInput,
-      rawOutput: params.rawOutput === undefined ? undefined : JSON.parse(JSON.stringify(params.rawOutput))
-    }
+    data: toOpenCycleData(params)
+  });
+}
+
+export async function upsertOpenCycleForMemoryItem(params: {
+  userId: string;
+  memoryItemId: string;
+  rawInput?: string;
+  draft: OpenCycleDraft;
+  rawOutput?: unknown;
+}) {
+  return prisma.openCycle.upsert({
+    where: {
+      memoryItemId: params.memoryItemId
+    },
+    update: {
+      ...toOpenCycleData(params),
+      closedAt: null
+    },
+    create: toOpenCycleData(params)
   });
 }
 
 export async function listOpenCycles(userId: string, limit = 10) {
   return prisma.openCycle.findMany({
-    where: { userId },
+    where: {
+      userId,
+      closedAt: null
+    },
     orderBy: { createdAt: "desc" },
     take: limit,
     include: {
       memoryItem: true
     }
   });
+}
+
+export async function closeLastOpenCycle(userId: string) {
+  const cycle = await prisma.openCycle.findFirst({
+    where: {
+      userId,
+      closedAt: null
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  if (!cycle) {
+    return null;
+  }
+
+  return prisma.openCycle.update({
+    where: { id: cycle.id },
+    data: { closedAt: new Date() }
+  });
+}
+
+function toOpenCycleData(params: {
+  userId: string;
+  memoryItemId?: string;
+  rawInput?: string;
+  draft: OpenCycleDraft;
+  rawOutput?: unknown;
+}) {
+  return {
+    userId: params.userId,
+    memoryItemId: params.memoryItemId,
+    type: toPrismaOpenCycleType(params.draft.type),
+    title: params.draft.title,
+    context: params.draft.context,
+    area: params.draft.area,
+    urgency: params.draft.urgency,
+    importance: params.draft.importance,
+    energy: params.draft.energy,
+    estimatedMinutes: params.draft.estimatedMinutes,
+    dueDate: parseDueDate(params.draft.dueDate),
+    reason: params.draft.reason,
+    rawInput: params.rawInput,
+    rawOutput: params.rawOutput === undefined ? undefined : JSON.parse(JSON.stringify(params.rawOutput))
+  };
 }
 
 function toPrismaOpenCycleType(type: OpenCycleDraft["type"]): OpenCycleType {
