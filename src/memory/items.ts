@@ -16,6 +16,9 @@ export async function saveTextMemoryItem(params: {
       type: MemoryItemType.TEXT,
       content: params.text,
       telegramMessageId: params.telegramMessageId
+    },
+    include: {
+      lifeEvent: true
     }
   });
 }

@@ -1,7 +1,8 @@
 import { Bot, Keyboard } from "grammy";
 import { config } from "../config.js";
 import { listLifeEvents } from "../memory/events.js";
-import { deleteLastMemoryItem, getLastMemoryItem, saveTextMemoryItem } from "../memory/items.js";
+import { ingestTelegramText } from "../memory/ingest.js";
+import { deleteLastMemoryItem, getLastMemoryItem } from "../memory/items.js";
 import { getOrCreateUser } from "../memory/users.js";
 
 const mainKeyboard = new Keyboard()
@@ -107,13 +108,19 @@ export function createTelegramBot() {
 
     const user = await getOrCreateUser(ctx.from);
 
-    await saveTextMemoryItem({
+    const result = await ingestTelegramText({
       userId: user.id,
       text: ctx.message.text,
       telegramMessageId: ctx.message.message_id
     });
 
-    await ctx.reply("✅ Запомнил в Inbox.", {
+    const replyLines = [`✅ Запомнил в ${result.lifeEventName}.`];
+
+    if (result.classificationStatus === "saved" && result.openCycle) {
+      replyLines.push(`🧠 Понял как: ${formatOpenCycleType(result.openCycle.type)}.`);
+    }
+
+    await ctx.reply(replyLines.join("\n"), {
       reply_markup: mainKeyboard
     });
   });
@@ -123,4 +130,17 @@ export function createTelegramBot() {
   });
 
   return bot;
+}
+function formatOpenCycleType(type: string): string {
+  const labels: Record<string, string> = {
+    TASK: "задача",
+    THOUGHT: "мысль",
+    PURCHASE: "покупка",
+    IDEA: "идея",
+    PROMISE: "обещание",
+    NOTE: "заметка",
+    OTHER: "другое"
+  };
+
+  return labels[type] ?? "другое";
 }

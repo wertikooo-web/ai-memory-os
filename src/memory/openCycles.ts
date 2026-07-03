@@ -21,7 +21,7 @@ export async function saveOpenCycle(params: {
       importance: params.draft.importance,
       energy: params.draft.energy,
       estimatedMinutes: params.draft.estimatedMinutes,
-      dueDate: params.draft.dueDate ? new Date(params.draft.dueDate) : null,
+      dueDate: parseDueDate(params.draft.dueDate),
       reason: params.draft.reason,
       rawInput: params.rawInput,
       rawOutput: params.rawOutput === undefined ? undefined : JSON.parse(JSON.stringify(params.rawOutput))
@@ -35,4 +35,13 @@ function toPrismaOpenCycleType(type: OpenCycleDraft["type"]): OpenCycleType {
   }
 
   return OpenCycleType.OTHER;
+}
+
+function parseDueDate(value: string | null): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }

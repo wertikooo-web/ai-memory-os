@@ -240,3 +240,26 @@ Input
 Результат:
 
 Новые источники вроде pendant, email, calendar, WhatsApp или browser добавляются в `src/input`, не ломая остальную архитектуру.
+## 2026-07-04. Text -> OpenCycle только после сохранения MemoryItem
+
+Решение:
+
+Подключать LLM-классификацию текстовых сообщений только после успешного сохранения `MemoryItem`.
+
+Поток:
+
+```text
+Text
+  -> normalizeText
+  -> save MemoryItem
+  -> classifyInput, если включено
+  -> save OpenCycle
+```
+
+Почему:
+
+Пользователь не должен терять запись из-за ошибки OpenAI, сетевого сбоя или неправильного JSON. Capture важнее классификации.
+
+Ограничение:
+
+LLM-классификация управляется env-флагом `LLM_CLASSIFICATION_ENABLED`. Если флаг выключен или `OPENAI_API_KEY` не задан, бот сохраняет только `MemoryItem` и работает как раньше.

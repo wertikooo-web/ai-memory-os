@@ -265,6 +265,7 @@ Env для будущего подключения OpenAI:
 ```env
 OPENAI_API_KEY="put-your-openai-api-key-here"
 OPENAI_MODEL="gpt-4.1-mini"
+LLM_CLASSIFICATION_ENABLED="false"
 ```
 
 На текущем этапе Telegram bot не вызывает LLM автоматически. Это сделано специально: сначала сохраняем стабильный MVP, затем включаем классификацию отдельным маленьким шагом.
@@ -290,3 +291,33 @@ link.ts
 ```
 
 Сейчас реализована текстовая нормализация. Voice, image, document и link подготовлены как TODO для следующих этапов.
+## MVP Checkpoint 3: Text -> OpenCycle
+
+Текстовая LLM-классификация подключается осторожно и только через env-флаг.
+
+Поток:
+
+```text
+Telegram text
+  -> Input Normalization
+  -> MemoryItem в Supabase/Postgres
+  -> LLM Classification, если включена
+  -> OpenCycle в Supabase/Postgres
+```
+
+Главное правило сохраняется:
+
+```text
+сначала сохранить
+потом разобрать
+```
+
+Если `LLM_CLASSIFICATION_ENABLED="false"`, бот работает как раньше и отвечает:
+
+```text
+✅ Запомнил в Inbox.
+```
+
+Если `LLM_CLASSIFICATION_ENABLED="true"` и `OPENAI_API_KEY` задан, бот дополнительно пытается создать `OpenCycle`.
+
+Если LLM-классификация падает, `MemoryItem` уже сохранен, пользователь не теряет запись, а ошибка пишется только в logs.

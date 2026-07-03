@@ -113,3 +113,14 @@ Railway -> Node.js/grammY long polling -> Supabase/Postgres
 - API.
 
 Новые интерфейсы не должны обходить Memory Core.
+## MVP Checkpoint 3. Text -> OpenCycle
+
+Статус: реализовано в коде, включается через env-флаг.
+
+Что сделано:
+
+- текст проходит через `Input Normalization`;
+- `MemoryItem` сохраняется первым;
+- LLM-классификация запускается только если включен `LLM_CLASSIFICATION_ENABLED`;
+- результат классификации сохраняется как `OpenCycle`;
+- если LLM падает, запись не теряется.
