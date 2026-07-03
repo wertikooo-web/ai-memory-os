@@ -197,11 +197,7 @@ export function createTelegramBot() {
       telegramMessageId: ctx.message.message_id
     });
 
-    const replyLines = [`✅ Запомнил в ${result.lifeEventName}.`];
-
-    if (result.classificationStatus === "saved" && result.openCycle) {
-      replyLines.push(`🧠 Понял как: ${formatOpenCycleType(result.openCycle.type)}.`);
-    }
+    const replyLines = buildIngestReply(result);
 
     await ctx.reply(replyLines.join("\n"), {
       reply_markup: mainKeyboard
@@ -213,6 +209,51 @@ export function createTelegramBot() {
   });
 
   return bot;
+}
+
+type IngestResult = Awaited<ReturnType<typeof ingestTelegramText>>;
+
+function buildIngestReply(result: IngestResult): string[] {
+  if (result.classificationStatus === "closed" && result.closedCycleTitle) {
+    return [
+      `✅ Закрыл: ${result.closedCycleTitle}.`,
+      "🧠 Понял: это завершение открытого цикла."
+    ];
+  }
+
+  if (result.classificationStatus === "close_target_not_found") {
+    return [
+      `✅ Запомнил в ${result.lifeEventName}.`,
+      "🧠 Похоже, ты говоришь о завершении дела, но я не нашёл подходящий открытый цикл."
+    ];
+  }
+
+  if (result.classificationStatus === "memory_only") {
+    return [
+      `✅ Запомнил в ${result.lifeEventName}.`,
+      "🧠 Понял: это заметка, без открытого цикла."
+    ];
+  }
+
+  if (result.classificationStatus === "unsupported_intent" && result.intent) {
+    return [
+      `✅ Запомнил в ${result.lifeEventName}.`,
+      `🧠 Понял намерение: ${formatNaturalIntent(result.intent.intent)}.`,
+      "Пока я сохраняю такие фразы безопасно, без автоматического удаления или изменения старых записей."
+    ];
+  }
+
+  const lines = [`✅ Запомнил в ${result.lifeEventName}.`];
+
+  if (result.classificationStatus === "saved" && result.openCycle) {
+    lines.push(`🧠 Понял как: ${formatOpenCycleType(result.openCycle.type)}.`);
+  }
+
+  if (result.classificationStatus === "failed") {
+    lines.push("Разбор через AI временно не сработал, но запись уже сохранена.");
+  }
+
+  return lines;
 }
 
 function formatOpenCycleLine(index: number, cycle: Awaited<ReturnType<typeof listOpenCycles>>[number]): string {
@@ -249,4 +290,19 @@ function formatOpenCycleType(type: string): string {
   };
 
   return labels[type] ?? "другое";
+}
+
+function formatNaturalIntent(intent: string): string {
+  const labels: Record<string, string> = {
+    CREATE_MEMORY: "запомнить",
+    CREATE_OPEN_CYCLE: "создать открытый цикл",
+    CLOSE_OPEN_CYCLE: "закрыть открытый цикл",
+    DELETE_MEMORY: "удалить запись",
+    UPDATE_MEMORY: "изменить запись",
+    SEARCH_MEMORY: "найти в памяти",
+    MOVE_TO_CONTEXT: "перенести в контекст",
+    UNKNOWN: "непонятно"
+  };
+
+  return labels[intent] ?? "непонятно";
 }

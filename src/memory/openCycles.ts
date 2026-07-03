@@ -1,6 +1,6 @@
 import { OpenCycleType } from "@prisma/client";
 import { prisma } from "../db/prisma.js";
-import type { OpenCycleDraft } from "../ai/types.js";
+import type { OpenCycleDraft, RecentOpenCycleForIntent } from "../ai/types.js";
 
 export async function saveOpenCycle(params: {
   userId: string;
@@ -47,6 +47,34 @@ export async function listOpenCycles(userId: string, limit = 10) {
   });
 }
 
+export async function listRecentOpenCyclesForIntent(userId: string, limit = 15): Promise<RecentOpenCycleForIntent[]> {
+  const cycles = await prisma.openCycle.findMany({
+    where: {
+      userId,
+      closedAt: null
+    },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      type: true,
+      title: true,
+      context: true,
+      area: true,
+      createdAt: true
+    }
+  });
+
+  return cycles.map((cycle) => ({
+    id: cycle.id,
+    type: cycle.type,
+    title: cycle.title,
+    context: cycle.context,
+    area: cycle.area,
+    createdAt: cycle.createdAt.toISOString()
+  }));
+}
+
 export async function closeLastOpenCycle(userId: string) {
   const cycle = await prisma.openCycle.findFirst({
     where: {
@@ -54,6 +82,22 @@ export async function closeLastOpenCycle(userId: string) {
       closedAt: null
     },
     orderBy: { createdAt: "desc" }
+  });
+
+  if (!cycle) {
+    return null;
+  }
+
+  return closeOpenCycleById({ userId, openCycleId: cycle.id });
+}
+
+export async function closeOpenCycleById(params: { userId: string; openCycleId: string }) {
+  const cycle = await prisma.openCycle.findFirst({
+    where: {
+      id: params.openCycleId,
+      userId: params.userId,
+      closedAt: null
+    }
   });
 
   if (!cycle) {
