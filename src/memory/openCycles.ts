@@ -29,6 +29,17 @@ export async function saveOpenCycle(params: {
   });
 }
 
+export async function listOpenCycles(userId: string, limit = 10) {
+  return prisma.openCycle.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    include: {
+      memoryItem: true
+    }
+  });
+}
+
 function toPrismaOpenCycleType(type: OpenCycleDraft["type"]): OpenCycleType {
   if (type in OpenCycleType) {
     return OpenCycleType[type];

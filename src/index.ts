@@ -20,6 +20,7 @@ async function main() {
     { command: "start", description: "Активировать AI Memory OS" },
     { command: "events", description: "Показать события" },
     { command: "last", description: "Показать последнюю запись" },
+    { command: "open_cycles", description: "Показать открытые циклы" },
     { command: "delete_last", description: "Удалить последнюю запись" }
   ]);
 

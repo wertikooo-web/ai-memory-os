@@ -3,12 +3,16 @@ import { config } from "../config.js";
 import { listLifeEvents } from "../memory/events.js";
 import { ingestTelegramText } from "../memory/ingest.js";
 import { deleteLastMemoryItem, getLastMemoryItem } from "../memory/items.js";
+import { listOpenCycles } from "../memory/openCycles.js";
 import { getOrCreateUser } from "../memory/users.js";
+
+type OpenCycleListItem = Awaited<ReturnType<typeof listOpenCycles>>[number];
 
 const mainKeyboard = new Keyboard()
   .text("/events")
   .text("/last")
   .row()
+  .text("/open_cycles")
   .text("/delete_last")
   .resized()
   .persistent();
@@ -65,6 +69,28 @@ export function createTelegramBot() {
 
     const lines = events.map((event) => `${event.name} — ${event._count.memoryItems} записей`);
     await ctx.reply(["События:", "", ...lines].join("\n"), {
+      reply_markup: mainKeyboard
+    });
+  });
+
+  bot.command("open_cycles", async (ctx) => {
+    if (!ctx.from) {
+      await ctx.reply("Не удалось определить пользователя.");
+      return;
+    }
+
+    const user = await getOrCreateUser(ctx.from);
+    const cycles = await listOpenCycles(user.id, 10);
+
+    if (cycles.length === 0) {
+      await ctx.reply("Открытых циклов пока нет. Отправь текст, и я попробую его разобрать.", {
+        reply_markup: mainKeyboard
+      });
+      return;
+    }
+
+    const lines = cycles.map((cycle, index) => formatOpenCycleLine(index + 1, cycle));
+    await ctx.reply(["Открытые циклы:", "", ...lines].join("\n\n"), {
       reply_markup: mainKeyboard
     });
   });
@@ -131,6 +157,29 @@ export function createTelegramBot() {
 
   return bot;
 }
+
+function formatOpenCycleLine(index: number, cycle: OpenCycleListItem): string {
+  const parts = [
+    `${index}. ${formatOpenCycleType(cycle.type)}: ${cycle.title}`,
+    cycle.context ? `Контекст: ${cycle.context}` : null,
+    formatScoreLine(cycle.urgency, cycle.importance, cycle.energy),
+    cycle.dueDate ? `Срок: ${cycle.dueDate.toLocaleDateString("ru-RU")}` : null,
+    cycle.reason ? `Почему: ${cycle.reason}` : null
+  ].filter(Boolean);
+
+  return parts.join("\n");
+}
+
+function formatScoreLine(urgency: number | null, importance: number | null, energy: number | null): string | null {
+  const scores = [
+    urgency ? `срочность ${urgency}` : null,
+    importance ? `важность ${importance}` : null,
+    energy ? `энергия ${energy}` : null
+  ].filter(Boolean);
+
+  return scores.length > 0 ? scores.join(" · ") : null;
+}
+
 function formatOpenCycleType(type: string): string {
   const labels: Record<string, string> = {
     TASK: "задача",

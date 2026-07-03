@@ -124,3 +124,17 @@ Railway -> Node.js/grammY long polling -> Supabase/Postgres
 - LLM-классификация запускается только если включен `LLM_CLASSIFICATION_ENABLED`;
 - результат классификации сохраняется как `OpenCycle`;
 - если LLM падает, запись не теряется.
+## MVP Checkpoint 4. OpenCycle visibility
+
+Статус: реализовано.
+
+Что сделано:
+
+- добавлена команда `/open_cycles`;
+- бот показывает последние `OpenCycle` текущего пользователя;
+- можно проверить, что LLM-классификация действительно сохраняется в Supabase/Postgres;
+- Telegram command menu и reply keyboard обновлены.
+
+Почему это важно:
+
+До этого пользователь видел только короткий ответ `Понял как: ...`, но не видел сохраненный structured результат. Теперь можно проверять память прямо из Telegram.
