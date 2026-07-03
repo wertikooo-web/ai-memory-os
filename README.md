@@ -41,11 +41,11 @@ AI Memory OS — персональная внешняя память челов
 
 ## Current MVP Status
 
-MVP Checkpoint 1 готов.
+MVP Checkpoint 1 готов. Railway deploy подтвержден: бот работает постоянно без запуска с локального компьютера.
 
 Сейчас работает:
 
-- Telegram bot запускается локально через long polling;
+- Telegram bot запускается через long polling локально и на Railway;
 - `/start` активирует бота;
 - текстовые сообщения сохраняются в Supabase/Postgres;
 - пользователь создается или находится по Telegram ID;
@@ -148,6 +148,52 @@ npm.cmd start
 Окно PowerShell должно оставаться открытым. Пока процесс работает, Telegram bot отвечает.
 
 На этой Windows-машине надежнее использовать `npm.cmd`, потому что обычный `npm` в PowerShell может упереться в Execution Policy.
+
+## Деплой на Railway
+
+Railway используется только для запуска Node.js Telegram bot. Supabase остается отдельной PostgreSQL-базой и подключается через `DATABASE_URL`.
+
+Текущий MVP работает через Telegram long polling. Это самый простой вариант для первого этапа: нам не нужен webhook, публичный HTTP endpoint или отдельный web server.
+
+Что должно быть в Railway Variables:
+
+```text
+BOT_TOKEN
+DATABASE_URL
+```
+
+Секреты нельзя хранить в Git и нельзя вставлять в документацию. Они должны лежать только в `.env` локально и в Variables на Railway.
+
+Базовые команды Railway CLI:
+
+```powershell
+npx.cmd @railway/cli status
+```
+
+Показывает, к какому Railway project/service подключена текущая папка.
+
+```powershell
+npx.cmd @railway/cli variable set BOT_TOKEN --stdin --skip-deploys
+npx.cmd @railway/cli variable set DATABASE_URL --stdin --skip-deploys
+```
+
+Добавляет переменные окружения. Значение переменной передается через stdin, чтобы не печатать токены в командной строке.
+
+```powershell
+npx.cmd @railway/cli up -y --detach --message "Deploy with env vars"
+```
+
+Загружает текущую версию проекта на Railway.
+
+```powershell
+npx.cmd @railway/cli logs --lines 100
+```
+
+Показывает последние логи сервиса.
+
+Важно: при long polling должен работать только один экземпляр бота. Если одновременно запущены локальный бот и Railway bot, Telegram может вернуть ошибку `409 Conflict`. Перед проверкой Railway останови локальный `npm.cmd start`.
+
+Текущий статус: Railway deploy подтвержден, бот отвечает из облака.
 
 ## Команды бота
 
