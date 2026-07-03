@@ -182,3 +182,134 @@ Supabase используется только как база данных.
 - новые интерфейсы поверх Memory Core.
 
 Но на первом этапе все остается простым.
+## LLM Layer
+
+LLM подключается отдельным слоем `src/ai` и не должен жить внутри Telegram handlers.
+
+Первый use case LLM: классификация входящего сообщения.
+
+Поток данных:
+
+```text
+Telegram handler
+  -> Memory Core
+  -> MemoryItem в Supabase/Postgres
+  -> AI Input Understanding Service
+  -> OpenCycle draft
+  -> OpenCycle в Supabase/Postgres
+```
+
+LLM не является “магическим чатом”. Он используется как сервис понимания входящих сообщений.
+
+Задача LLM:
+
+- понять тип входа: задача, мысль, покупка, идея, обещание, заметка или другое;
+- предложить короткий title;
+- предложить context;
+- определить area;
+- оценить urgency, importance и energy по шкале 1-5;
+- выделить estimatedMinutes, если это возможно;
+- выделить dueDate, если срок явно или неявно указан;
+- вернуть structured JSON;
+- кратко объяснить reason.
+
+### Adapter Pattern
+
+Код проекта не должен зависеть напрямую от OpenAI в бизнес-логике.
+
+Правильная граница:
+
+```text
+classifyInput
+  -> LlmClient
+  -> LlmProvider interface
+  -> OpenAiLlmProvider сегодня
+  -> другой provider завтра
+```
+
+Если позже OpenAI заменится на другой provider, Memory Core и Telegram handler не должны переписываться.
+
+### Storage
+
+Supabase/Postgres остается основной базой данных.
+
+В Supabase хранятся:
+
+- пользователи;
+- LifeEvents;
+- MemoryItems;
+- Assets;
+- OpenCycles;
+- будущие настройки уведомлений;
+- будущие Morning Focus данные.
+
+AI-слой только помогает понять входящее сообщение. Источник истины остается в PostgreSQL.
+## Input Normalization Layer
+
+Один из главных архитектурных принципов проекта:
+
+```text
+Любой источник информации сначала нормализуется,
+а потом вся система работает только с единым форматом данных.
+```
+
+`Input Normalization` приводит любой входящий источник к единому внутреннему представлению `NormalizedInput`.
+
+Источники могут быть разными:
+
+- текст Telegram;
+- голосовое сообщение;
+- фотография;
+- PDF;
+- документ;
+- ссылка;
+- email в будущем;
+- запись с медальона в будущем;
+- данные из других интеграций.
+
+Основной pipeline системы:
+
+```text
+Input
+  -> Input Normalization
+  -> Normalized Text
+  -> LLM Classification
+  -> Context
+  -> Open Cycle / Memory Item
+  -> Morning Focus
+```
+
+Правила нормализации:
+
+1. Если вход уже текстовый, вернуть текст.
+2. Если вход голосовой, выполнить транскрибацию и вернуть текст.
+3. Если вход является изображением, выполнить OCR или Vision-анализ и вернуть текстовое описание.
+4. Если вход является PDF или документом, извлечь текст.
+5. Если вход является ссылкой, получить заголовок, основной текст и краткое описание.
+
+После `Input Normalization` все последующие модули работают только с текстом и метаданными.
+
+Это означает, что `Memory Core` не должен знать о Telegram, голосе, PDF, фотографиях или будущих интеграциях. Для него существует только единый объект: `NormalizedInput`.
+
+Кодовая граница:
+
+```text
+src/input/normalize.ts
+src/input/text.ts
+src/input/voice.ts
+src/input/image.ts
+src/input/document.ts
+src/input/link.ts
+```
+
+Будущие источники добавляются сюда же:
+
+```text
+src/input/pendant.ts
+src/input/email.ts
+src/input/calendar.ts
+src/input/whatsapp.ts
+src/input/browser.ts
+```
+
+Остальная архитектура при этом не должна переписываться.

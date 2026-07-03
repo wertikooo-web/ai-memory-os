@@ -22,6 +22,16 @@ enum AssetType {
   LINK
 }
 
+enum OpenCycleType {
+  TASK
+  THOUGHT
+  PURCHASE
+  IDEA
+  PROMISE
+  NOTE
+  OTHER
+}
+
 model User {
   id             String       @id @default(cuid())
   telegramId     String       @unique
@@ -34,6 +44,7 @@ model User {
   lifeEvents     LifeEvent[]
   memoryItems    MemoryItem[]
   assets         Asset[]
+  openCycles     OpenCycle[]
 }
 
 model LifeEvent {
@@ -63,6 +74,7 @@ model MemoryItem {
   user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   lifeEvent   LifeEvent      @relation(fields: [lifeEventId], references: [id], onDelete: Cascade)
   assets      Asset[]
+  openCycle   OpenCycle?
 
   @@index([userId, createdAt])
   @@index([lifeEventId, createdAt])
@@ -83,4 +95,30 @@ model Asset {
 
   @@index([userId, createdAt])
   @@index([memoryItemId])
+}
+model OpenCycle {
+  id               String        @id @default(cuid())
+  userId           String
+  memoryItemId     String?       @unique
+  type             OpenCycleType
+  title            String
+  context          String?
+  area             String?
+  urgency          Int?
+  importance       Int?
+  energy           Int?
+  estimatedMinutes Int?
+  dueDate          DateTime?
+  reason           String?
+  source           String        @default("llm")
+  rawInput         String?
+  rawOutput        Json?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memoryItem       MemoryItem?   @relation(fields: [memoryItemId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([type])
+  @@index([dueDate])
 }

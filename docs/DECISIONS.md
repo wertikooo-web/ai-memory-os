@@ -176,3 +176,67 @@ Telegram -> Memory Core -> Prisma -> Supabase/Postgres -> Read-back в Telegram
 Ограничение MVP:
 
 Long polling подходит для текущего этапа и одного основателя-пользователя. Webhook можно рассмотреть позже, когда появится реальная причина: web-интерфейс, несколько сервисов, более строгий production-контур или отдельный HTTP API.
+## 2026-07-04. LLM как сервис понимания входящих сообщений
+
+Решение:
+
+Подключать LLM отдельным слоем `src/ai`, а не внутри Telegram handlers.
+
+Первый LLM use case:
+
+Классифицировать входящее сообщение и превращать его в структурированный `OpenCycle` с полями `type`, `title`, `context`, `area`, `urgency`, `importance`, `energy`, `estimatedMinutes`, `dueDate` и `reason`.
+
+Почему:
+
+AI Memory OS не должен превращаться в обычный AI chat. LLM нужен как сервис понимания входящих сообщений: он помогает системе увидеть задачу, мысль, покупку, идею, обещание или заметку внутри сырого текста.
+
+Архитектурная граница:
+
+- Telegram принимает сообщение;
+- Memory Core сохраняет данные;
+- AI layer классифицирует текст;
+- Supabase/Postgres хранит результат;
+- Telegram показывает пользователю простой ответ.
+
+Что важно:
+
+- Supabase остается основной базой данных;
+- OpenAI является текущим provider, но не должен протекать в бизнес-логику;
+- provider подключается через adapter pattern;
+- `transcribeVoice` пока остается TODO;
+- `buildMorningFocus` готовится как будущий use case, но не включается в текущий поток.
+## 2026-07-04. Input Normalization вместо отдельной Transcription-системы
+
+Решение:
+
+Не создавать отдельный модуль `Transcription` как центральную часть системы.
+
+Вместо этого вводится единый слой `Input Normalization`.
+
+Почему:
+
+Голос — только один из будущих источников. Если сделать транскрибацию центральной архитектурной сущностью, проект начнет мыслить аудио-файлами, а не универсальным входом в память.
+
+Правильная модель:
+
+```text
+Input
+  -> Input Normalization
+  -> Normalized Text
+  -> LLM Classification
+  -> Context
+  -> OpenCycle / MemoryItem
+```
+
+Что важно:
+
+- текст Telegram уже является нормализуемым входом;
+- voice позже нормализуется через транскрибацию;
+- image позже нормализуется через OCR или Vision;
+- document/PDF позже нормализуется через text extraction;
+- link позже нормализуется через title, main text и summary;
+- Memory Core работает с `NormalizedInput`, а не с Telegram, PDF, voice или image напрямую.
+
+Результат:
+
+Новые источники вроде pendant, email, calendar, WhatsApp или browser добавляются в `src/input`, не ломая остальную архитектуру.

@@ -239,3 +239,54 @@ npx.cmd @railway/cli logs --lines 100
 Сначала делаем маленький, стабильный MVP для ежедневного использования одним человеком.
 
 Не усложняем архитектуру заранее.
+## LLM / AI слой
+
+LLM-логика живет в `src/ai` и не смешивается с Telegram handlers.
+
+Первый подготовленный use case: `classifyInput`.
+
+Он должен превращать входящий текст в structured JSON для `OpenCycle`:
+
+```text
+type
+title
+context
+area
+urgency
+importance
+energy
+estimatedMinutes
+dueDate
+reason
+```
+
+Env для будущего подключения OpenAI:
+
+```env
+OPENAI_API_KEY="put-your-openai-api-key-here"
+OPENAI_MODEL="gpt-4.1-mini"
+```
+
+На текущем этапе Telegram bot не вызывает LLM автоматически. Это сделано специально: сначала сохраняем стабильный MVP, затем включаем классификацию отдельным маленьким шагом.
+## Input Normalization
+
+Любой источник информации сначала нормализуется, а потом система работает с единым объектом `NormalizedInput`.
+
+Основной поток:
+
+```text
+Input -> Input Normalization -> Normalized Text -> LLM Classification -> OpenCycle / MemoryItem
+```
+
+Кодовый каркас находится в `src/input`:
+
+```text
+normalize.ts
+text.ts
+voice.ts
+image.ts
+document.ts
+link.ts
+```
+
+Сейчас реализована текстовая нормализация. Voice, image, document и link подготовлены как TODO для следующих этапов.
