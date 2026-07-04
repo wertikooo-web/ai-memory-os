@@ -433,29 +433,36 @@ function buildIngestReply(result: IngestResult): string[] {
 
   if (result.classificationStatus === "close_target_not_found") {
     return [
-      "✅ Запомнил.",
+      "✅ Запомнил",
       "🧠 Похоже, ты говоришь о завершении дела, но я не нашёл подходящий открытый цикл."
     ];
   }
 
   if (result.classificationStatus === "delete_candidate_not_found") {
     return [
-      "✅ Запомнил.",
+      "✅ Запомнил",
       "🧠 Понял, что ты хочешь удалить запись, но не нашёл достаточно похожую. Пока ничего не удаляю."
     ];
   }
 
   if (result.classificationStatus === "memory_only") {
     return [
-      "✅ Запомнил.",
-      "🧠 Понял: это заметка, без открытого цикла."
+      "✅ Запомнил",
+      "🧠 Заметка"
     ];
   }
 
   if (result.classificationStatus === "unsupported_intent" && result.intent) {
+    if (result.intent.intent === "SEARCH_MEMORY") {
+      return [
+        "🔎 Поиск по памяти пока не подключен",
+        "✅ Запомнил вопрос"
+      ];
+    }
+
     return [
-      "✅ Запомнил.",
-      `🧠 Понял намерение: ${formatNaturalIntent(result.intent.intent)}.`,
+      "✅ Запомнил",
+      `🧠 ${formatNaturalIntentTitle(result.intent.intent)}`,
       "Пока я сохраняю такие фразы безопасно, без автоматического изменения старых записей."
     ];
   }
@@ -463,15 +470,15 @@ function buildIngestReply(result: IngestResult): string[] {
   if (result.classificationStatus === "updated" && result.updatedCycleTitle) {
     return [
       `✅ Обновил существующий цикл: ${result.updatedCycleTitle}.`,
-      "✅ Запомнил.",
-      result.openCycle ? `🧠 Понял как: ${formatOpenCycleType(result.openCycle.type)}.` : null,
+      "✅ Запомнил",
+      result.openCycle ? `🧠 ${formatOpenCycleTypeTitle(result.openCycle.type)}` : null,
       result.openCycle?.context ? `Контекст: ${result.openCycle.context}` : null
     ].filter(Boolean) as string[];
   }
-  const lines = ["✅ Запомнил."];
+  const lines = ["✅ Запомнил"];
 
   if (result.classificationStatus === "saved" && result.openCycle) {
-    lines.push(`🧠 Понял как: ${formatOpenCycleType(result.openCycle.type)}.`);
+    lines.push(`🧠 ${formatOpenCycleTypeTitle(result.openCycle.type)}`);
     if (result.openCycle.context) {
       lines.push(`Контекст: ${result.openCycle.context}`);
     }
@@ -634,6 +641,10 @@ function formatOpenCycleType(type: string): string {
   return labels[type] ?? "другое";
 }
 
+function formatOpenCycleTypeTitle(type: string): string {
+  return capitalizeFirst(formatOpenCycleType(type));
+}
+
 function formatNaturalIntent(intent: string): string {
   const labels: Record<string, string> = {
     CREATE_MEMORY: "запомнить",
@@ -647,6 +658,18 @@ function formatNaturalIntent(intent: string): string {
   };
 
   return labels[intent] ?? "непонятно";
+}
+
+function formatNaturalIntentTitle(intent: string): string {
+  return capitalizeFirst(formatNaturalIntent(intent));
+}
+
+function capitalizeFirst(value: string): string {
+  if (value.length === 0) {
+    return value;
+  }
+
+  return `${value[0].toUpperCase()}${value.slice(1)}`;
 }
 
 function shorten(value: string, maxLength: number): string {
