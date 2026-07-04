@@ -398,6 +398,13 @@ function buildIngestReply(result: IngestResult): string[] {
     ];
   }
 
+  if (result.classificationStatus === "updated" && result.updatedCycleTitle) {
+    return [
+      `✅ Обновил существующий цикл: ${result.updatedCycleTitle}.`,
+      `✅ Запомнил в ${result.lifeEventName}.`,
+      result.openCycle ? `🧠 Понял как: ${formatOpenCycleType(result.openCycle.type)}.` : null
+    ].filter(Boolean) as string[];
+  }
   const lines = [`✅ Запомнил в ${result.lifeEventName}.`];
 
   if (result.classificationStatus === "saved" && result.openCycle) {

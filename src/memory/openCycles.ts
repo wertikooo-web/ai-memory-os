@@ -14,6 +14,56 @@ export async function saveOpenCycle(params: {
   });
 }
 
+export type SaveOrUpdateOpenCycleResult =
+  | {
+      status: "created";
+      cycle: Awaited<ReturnType<typeof saveOpenCycle>>;
+      duplicateOf: null;
+    }
+  | {
+      status: "updated";
+      cycle: Awaited<ReturnType<typeof saveOpenCycle>>;
+      duplicateOf: string;
+    };
+
+export async function saveOrUpdateSimilarOpenCycle(params: {
+  userId: string;
+  memoryItemId?: string;
+  rawInput?: string;
+  draft: OpenCycleDraft;
+  rawOutput?: unknown;
+}): Promise<SaveOrUpdateOpenCycleResult> {
+  const duplicate = await findSimilarOpenCycle({
+    userId: params.userId,
+    draft: params.draft
+  });
+
+  if (!duplicate) {
+    const cycle = await saveOpenCycle(params);
+    return {
+      status: "created",
+      cycle,
+      duplicateOf: null
+    };
+  }
+
+  const cycle = await prisma.openCycle.update({
+    where: { id: duplicate.id },
+    data: mergeOpenCycleData({
+      existing: duplicate,
+      draft: params.draft,
+      rawInput: params.rawInput,
+      rawOutput: params.rawOutput
+    })
+  });
+
+  return {
+    status: "updated",
+    cycle,
+    duplicateOf: duplicate.id
+  };
+}
+
 export async function upsertOpenCycleForMemoryItem(params: {
   userId: string;
   memoryItemId: string;
@@ -110,6 +160,104 @@ export async function closeOpenCycleById(params: { userId: string; openCycleId: 
   });
 }
 
+type SimilarOpenCycle = {
+  id: string;
+  type: OpenCycleType;
+  title: string;
+  context: string | null;
+  area: string | null;
+  urgency: number | null;
+  importance: number | null;
+  energy: number | null;
+  estimatedMinutes: number | null;
+  dueDate: Date | null;
+  reason: string | null;
+  rawInput: string | null;
+  rawOutput: unknown;
+};
+
+async function findSimilarOpenCycle(params: {
+  userId: string;
+  draft: OpenCycleDraft;
+}): Promise<SimilarOpenCycle | null> {
+  if (!isDedupeCandidateType(params.draft.type)) {
+    return null;
+  }
+
+  const candidates = await prisma.openCycle.findMany({
+    where: {
+      userId: params.userId,
+      closedAt: null,
+      type: {
+        in: getCompatibleTypes(params.draft.type)
+      }
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    select: {
+      id: true,
+      type: true,
+      title: true,
+      context: true,
+      area: true,
+      urgency: true,
+      importance: true,
+      energy: true,
+      estimatedMinutes: true,
+      dueDate: true,
+      reason: true,
+      rawInput: true,
+      rawOutput: true
+    }
+  });
+
+  const draftTokens = toComparableTokens(params.draft.title);
+  if (draftTokens.length === 0) {
+    return null;
+  }
+
+  const scored = candidates
+    .map((candidate) => ({
+      candidate,
+      score: titleSimilarity(draftTokens, toComparableTokens(candidate.title))
+    }))
+    .filter((item) => item.score >= 0.86)
+    .sort((a, b) => b.score - a.score);
+
+  return scored[0]?.candidate ?? null;
+}
+
+function mergeOpenCycleData(params: {
+  existing: SimilarOpenCycle;
+  draft: OpenCycleDraft;
+  rawInput?: string;
+  rawOutput?: unknown;
+}) {
+  const mergedRawOutput = {
+    previous: params.existing.rawOutput ?? null,
+    update: params.rawOutput ?? null,
+    dedupe: {
+      matchedOpenCycleId: params.existing.id,
+      matchedTitle: params.existing.title
+    }
+  };
+
+  return {
+    type: chooseType(params.existing.type, toPrismaOpenCycleType(params.draft.type)),
+    title: chooseTitle(params.existing.title, params.draft.title),
+    context: params.draft.context ?? params.existing.context,
+    area: params.draft.area ?? params.existing.area,
+    urgency: maxNullable(params.existing.urgency, params.draft.urgency),
+    importance: maxNullable(params.existing.importance, params.draft.importance),
+    energy: minNullable(params.existing.energy, params.draft.energy),
+    estimatedMinutes: params.draft.estimatedMinutes ?? params.existing.estimatedMinutes,
+    dueDate: parseDueDate(params.draft.dueDate) ?? params.existing.dueDate,
+    reason: params.draft.reason ?? params.existing.reason,
+    rawInput: appendRawInput(params.existing.rawInput, params.rawInput),
+    rawOutput: JSON.parse(JSON.stringify(mergedRawOutput))
+  };
+}
+
 function toOpenCycleData(params: {
   userId: string;
   memoryItemId?: string;
@@ -150,4 +298,142 @@ function parseDueDate(value: string | null): Date | null {
 
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isDedupeCandidateType(type: OpenCycleDraft["type"]): boolean {
+  return ["TASK", "PURCHASE", "PROMISE", "IDEA", "OTHER"].includes(type);
+}
+
+function getCompatibleTypes(type: OpenCycleDraft["type"]): OpenCycleType[] {
+  if (type === "TASK" || type === "PURCHASE") {
+    return [OpenCycleType.TASK, OpenCycleType.PURCHASE];
+  }
+
+  return [toPrismaOpenCycleType(type)];
+}
+
+function toComparableTokens(title: string): string[] {
+  const stopwords = new Set([
+    "и",
+    "в",
+    "во",
+    "на",
+    "по",
+    "для",
+    "про",
+    "к",
+    "ко",
+    "с",
+    "со",
+    "у",
+    "от",
+    "до",
+    "надо",
+    "нужно",
+    "нужн",
+    "купить",
+    "купи",
+    "куплю",
+    "купил",
+    "купила",
+    "купили",
+    "заказать",
+    "закажи",
+    "сделать",
+    "сделай",
+    "написать",
+    "напиши",
+    "ответить",
+    "позвонить",
+    "сегодня",
+    "завтра",
+    "вечером",
+    "утром"
+  ]);
+
+  return title
+    .toLowerCase()
+    .replaceAll("ё", "е")
+    .replace(/[^a-zа-я0-9\s]/gi, " ")
+    .split(/\s+/)
+    .map((token) => normalizeToken(token))
+    .filter((token) => token.length >= 3 && !stopwords.has(token));
+}
+
+function normalizeToken(token: string): string {
+  let value = token.trim();
+
+  for (const ending of ["ами", "ями", "ого", "ему", "ому", "ыми", "ими", "ый", "ий", "ая", "яя", "ое", "ее", "ов", "ев", "ей", "ам", "ям", "ах", "ях", "ом", "ем", "ой", "ей", "ые", "ие", "ы", "и", "а", "я", "о", "е", "ь"]) {
+    if (value.length > ending.length + 3 && value.endsWith(ending)) {
+      value = value.slice(0, -ending.length);
+      break;
+    }
+  }
+
+  return value;
+}
+
+function titleSimilarity(leftTokens: string[], rightTokens: string[]): number {
+  if (leftTokens.length === 0 || rightTokens.length === 0) {
+    return 0;
+  }
+
+  const left = new Set(leftTokens);
+  const right = new Set(rightTokens);
+  const intersection = [...left].filter((token) => right.has(token)).length;
+  const union = new Set([...left, ...right]).size;
+
+  return union === 0 ? 0 : intersection / union;
+}
+
+function chooseType(existing: OpenCycleType, draft: OpenCycleType): OpenCycleType {
+  if (existing === OpenCycleType.TASK && draft === OpenCycleType.PURCHASE) {
+    return OpenCycleType.PURCHASE;
+  }
+
+  if (existing === OpenCycleType.OTHER && draft !== OpenCycleType.OTHER) {
+    return draft;
+  }
+
+  return existing;
+}
+
+function chooseTitle(existing: string, draft: string): string {
+  return draft.length > existing.length ? draft : existing;
+}
+
+function maxNullable(left: number | null, right: number | null): number | null {
+  if (left === null) {
+    return right;
+  }
+
+  if (right === null) {
+    return left;
+  }
+
+  return Math.max(left, right);
+}
+
+function minNullable(left: number | null, right: number | null): number | null {
+  if (left === null) {
+    return right;
+  }
+
+  if (right === null) {
+    return left;
+  }
+
+  return Math.min(left, right);
+}
+
+function appendRawInput(existing: string | null, next?: string): string | undefined {
+  if (!existing) {
+    return next;
+  }
+
+  if (!next || existing.includes(next)) {
+    return existing;
+  }
+
+  return [existing, next].join("\n--- update ---\n");
 }

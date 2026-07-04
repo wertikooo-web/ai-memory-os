@@ -4,7 +4,7 @@ import type { NaturalIntentDraft, OpenCycleDraft } from "../ai/types.js";
 import { shouldClassifyWithLlm } from "../config.js";
 import { normalizeInput } from "../input/normalize.js";
 import { getMemoryItemByOpenCycleId, saveTextMemoryItem } from "./items.js";
-import { closeOpenCycleById, listRecentOpenCyclesForIntent, saveOpenCycle } from "./openCycles.js";
+import { closeOpenCycleById, listRecentOpenCyclesForIntent, saveOrUpdateSimilarOpenCycle } from "./openCycles.js";
 
 export type DeleteCandidate = {
   memoryItemId: string;
@@ -17,11 +17,13 @@ export type TextIngestResult = {
   lifeEventName: string;
   openCycle: OpenCycleDraft | null;
   closedCycleTitle: string | null;
+  updatedCycleTitle: string | null;
   deleteCandidate: DeleteCandidate | null;
   intent: NaturalIntentDraft | null;
   classificationStatus:
     | "disabled"
     | "saved"
+    | "updated"
     | "closed"
     | "close_target_not_found"
     | "delete_confirmation"
@@ -142,7 +144,7 @@ export async function ingestTelegramText(params: {
         locale: normalized.language ?? "ru"
       });
 
-      await saveOpenCycle({
+      const openCycleResult = await saveOrUpdateSimilarOpenCycle({
         userId: params.userId,
         memoryItemId: memoryItem.id,
         rawInput: normalized.text,
@@ -157,8 +159,9 @@ export async function ingestTelegramText(params: {
         memoryItemId: memoryItem.id,
         lifeEventName,
         openCycle: draft,
+        updatedCycleTitle: openCycleResult.status === "updated" ? openCycleResult.cycle.title : null,
         intent,
-        classificationStatus: "saved"
+        classificationStatus: openCycleResult.status === "updated" ? "updated" : "saved"
       });
     }
 
@@ -184,6 +187,7 @@ function buildResult(params: {
   lifeEventName: string;
   openCycle?: OpenCycleDraft | null;
   closedCycleTitle?: string | null;
+  updatedCycleTitle?: string | null;
   deleteCandidate?: DeleteCandidate | null;
   intent?: NaturalIntentDraft | null;
   classificationStatus: TextIngestResult["classificationStatus"];
@@ -193,6 +197,7 @@ function buildResult(params: {
     lifeEventName: params.lifeEventName,
     openCycle: params.openCycle ?? null,
     closedCycleTitle: params.closedCycleTitle ?? null,
+    updatedCycleTitle: params.updatedCycleTitle ?? null,
     deleteCandidate: params.deleteCandidate ?? null,
     intent: params.intent ?? null,
     classificationStatus: params.classificationStatus
