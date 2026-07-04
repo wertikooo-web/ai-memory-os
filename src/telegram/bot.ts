@@ -5,7 +5,7 @@ import { listLifeEvents } from "../memory/events.js";
 import { ingestTelegramText } from "../memory/ingest.js";
 import { buildMorningFocus, type MorningFocusCycle, type MorningFocusView } from "../memory/morningFocus.js";
 import { deleteLastMemoryItem, deleteMemoryItemByIdForUser, getLastMemoryItem } from "../memory/items.js";
-import { closeLastOpenCycle, listOpenCycles } from "../memory/openCycles.js";
+import { closeLastOpenCycle, findFirstDuplicateOpenCyclePair, listOpenCycles, mergeDuplicateOpenCycles } from "../memory/openCycles.js";
 import { reclassifyLastMemoryItem } from "../memory/reclassify.js";
 import { getOrCreateUser } from "../memory/users.js";
 
@@ -14,6 +14,8 @@ const mainKeyboard = new Keyboard()
   .text("/last")
   .row()
   .text("/open_cycles")
+  .text("/dedupe_cycles")
+  .row()
   .text("/reclassify_last")
   .row()
   .text("/close_cycle")
@@ -112,6 +114,27 @@ export function createTelegramBot() {
     });
   });
 
+  bot.command("dedupe_cycles", async (ctx) => {
+    if (!ctx.from) {
+      await ctx.reply("Не удалось определить пользователя.");
+      return;
+    }
+
+    const user = await getOrCreateUser(ctx.from);
+    const pair = await findFirstDuplicateOpenCyclePair(user.id);
+
+    if (!pair) {
+      await ctx.reply("Похожих открытых циклов пока не нашел.", {
+        reply_markup: mainKeyboard
+      });
+      return;
+    }
+
+    await ctx.reply(formatDuplicateOpenCyclePair(pair), {
+      reply_markup: buildDedupeConfirmationKeyboard(pair.keep.id, pair.duplicate.id)
+    });
+  });
+
   bot.command("reclassify_last", async (ctx) => {
     if (!ctx.from) {
       await ctx.reply("Не удалось определить пользователя.");
@@ -186,6 +209,45 @@ export function createTelegramBot() {
     await ctx.reply("🗑 Последняя запись удалена.", {
       reply_markup: mainKeyboard
     });
+  });
+
+  bot.callbackQuery(/^dc:y:/, async (ctx) => {
+    if (!ctx.from) {
+      await ctx.answerCallbackQuery("Не удалось определить пользователя.");
+      return;
+    }
+
+    const ids = parseDedupeCallbackIds(ctx.callbackQuery.data);
+    if (!ids) {
+      await ctx.answerCallbackQuery("Не понял, какие циклы объединять.");
+      return;
+    }
+
+    const user = await getOrCreateUser(ctx.from);
+    const result = await mergeDuplicateOpenCycles({
+      userId: user.id,
+      keepOpenCycleId: ids.keepOpenCycleId,
+      duplicateOpenCycleId: ids.duplicateOpenCycleId
+    });
+
+    if (!result) {
+      await ctx.answerCallbackQuery("Не удалось объединить.");
+      await ctx.editMessageText("Не удалось объединить циклы. Возможно, один из них уже закрыт или они больше не похожи.").catch(() => undefined);
+      return;
+    }
+
+    await ctx.answerCallbackQuery("Объединено.");
+    await ctx.editMessageText([
+      "✅ Объединил похожие циклы.",
+      "",
+      `Оставил: ${result.keep.title}`,
+      `Закрыл дубль: ${result.duplicate.title}`
+    ].join("\n")).catch(() => undefined);
+  });
+
+  bot.callbackQuery(/^dc:n$/, async (ctx) => {
+    await ctx.answerCallbackQuery("Ок, не объединяю.");
+    await ctx.editMessageText("Ок, не объединяю эти циклы.").catch(() => undefined);
   });
 
   bot.callbackQuery(/^delete_memory:yes:/, async (ctx) => {
@@ -464,10 +526,63 @@ function formatFocusCycle(cycle: MorningFocusCycle): string {
 
   return `${cycle.title}${details.length > 0 ? ` (${details.join(" · ")})` : ""}`;
 }
+
+function buildDedupeConfirmationKeyboard(keepOpenCycleId: string, duplicateOpenCycleId: string) {
+  return new InlineKeyboard()
+    .text("✅ Да, объединить", `dc:y:${keepOpenCycleId}:${duplicateOpenCycleId}`)
+    .text("❌ Нет", "dc:n");
+}
+
+function formatDuplicateOpenCyclePair(pair: NonNullable<Awaited<ReturnType<typeof findFirstDuplicateOpenCyclePair>>>) {
+  return [
+    "Нашел похожие открытые циклы:",
+    "",
+    `Оставить: ${pair.keep.title}`,
+    formatCompactOpenCycleDetails(pair.keep),
+    "",
+    `Закрыть как дубль: ${pair.duplicate.title}`,
+    formatCompactOpenCycleDetails(pair.duplicate),
+    "",
+    "Объединить?"
+  ].filter(Boolean).join("\n");
+}
+
+function formatCompactOpenCycleDetails(cycle: {
+  type: string;
+  context: string | null;
+  dueDate: Date | null;
+  urgency: number | null;
+  importance: number | null;
+}) {
+  const details = [
+    formatOpenCycleType(cycle.type),
+    cycle.context ? `контекст: ${cycle.context}` : null,
+    cycle.dueDate ? `срок: ${cycle.dueDate.toLocaleDateString("ru-RU")}` : null,
+    cycle.urgency ? `срочность ${cycle.urgency}` : null,
+    cycle.importance ? `важность ${cycle.importance}` : null
+  ].filter(Boolean);
+
+  return details.length > 0 ? `(${details.join(" · ")})` : null;
+}
+
 function buildDeleteConfirmationKeyboard(memoryItemId: string) {
   return new InlineKeyboard()
     .text("✅ Да, удалить", `delete_memory:yes:${memoryItemId}`)
     .text("❌ Нет", `delete_memory:no:${memoryItemId}`);
+}
+
+function parseDedupeCallbackIds(data: string): { keepOpenCycleId: string; duplicateOpenCycleId: string } | null {
+  const prefix = "dc:y:";
+  if (!data.startsWith(prefix)) {
+    return null;
+  }
+
+  const [keepOpenCycleId, duplicateOpenCycleId] = data.slice(prefix.length).split(":");
+  if (!keepOpenCycleId || !duplicateOpenCycleId) {
+    return null;
+  }
+
+  return { keepOpenCycleId, duplicateOpenCycleId };
 }
 
 function parseCallbackId(data: string, prefix: string): string | null {

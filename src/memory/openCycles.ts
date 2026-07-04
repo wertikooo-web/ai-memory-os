@@ -159,6 +159,163 @@ export async function closeOpenCycleById(params: { userId: string; openCycleId: 
     data: { closedAt: new Date() }
   });
 }
+export type DuplicateOpenCyclePair = {
+  keep: DuplicateOpenCycle;
+  duplicate: DuplicateOpenCycle;
+  score: number;
+};
+
+export type DuplicateOpenCycle = {
+  id: string;
+  type: OpenCycleType;
+  title: string;
+  context: string | null;
+  area: string | null;
+  urgency: number | null;
+  importance: number | null;
+  energy: number | null;
+  estimatedMinutes: number | null;
+  dueDate: Date | null;
+  reason: string | null;
+  createdAt: Date;
+};
+
+export async function findFirstDuplicateOpenCyclePair(userId: string): Promise<DuplicateOpenCyclePair | null> {
+  const cycles = await prisma.openCycle.findMany({
+    where: {
+      userId,
+      closedAt: null
+    },
+    orderBy: { createdAt: "asc" },
+    take: 100,
+    select: {
+      id: true,
+      type: true,
+      title: true,
+      context: true,
+      area: true,
+      urgency: true,
+      importance: true,
+      energy: true,
+      estimatedMinutes: true,
+      dueDate: true,
+      reason: true,
+      createdAt: true
+    }
+  });
+
+  let best: DuplicateOpenCyclePair | null = null;
+
+  for (let leftIndex = 0; leftIndex < cycles.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < cycles.length; rightIndex += 1) {
+      const left = cycles[leftIndex];
+      const right = cycles[rightIndex];
+
+      if (!areCompatibleOpenCycleTypes(left.type, right.type)) {
+        continue;
+      }
+
+      const score = titleSimilarity(toComparableTokens(left.title), toComparableTokens(right.title));
+      if (score < 0.86) {
+        continue;
+      }
+
+      const pair = buildDuplicatePair(left, right, score);
+      if (!best || pair.score > best.score) {
+        best = pair;
+      }
+    }
+  }
+
+  return best;
+}
+
+export async function mergeDuplicateOpenCycles(params: {
+  userId: string;
+  keepOpenCycleId: string;
+  duplicateOpenCycleId: string;
+}) {
+  if (params.keepOpenCycleId === params.duplicateOpenCycleId) {
+    return null;
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const cycles = await tx.openCycle.findMany({
+      where: {
+        userId: params.userId,
+        id: {
+          in: [params.keepOpenCycleId, params.duplicateOpenCycleId]
+        },
+        closedAt: null
+      },
+      select: {
+        id: true,
+        type: true,
+        title: true,
+        context: true,
+        area: true,
+        urgency: true,
+        importance: true,
+        energy: true,
+        estimatedMinutes: true,
+        dueDate: true,
+        reason: true,
+        rawInput: true,
+        rawOutput: true,
+        createdAt: true
+      }
+    });
+
+    const keep = cycles.find((cycle) => cycle.id === params.keepOpenCycleId);
+    const duplicate = cycles.find((cycle) => cycle.id === params.duplicateOpenCycleId);
+
+    if (!keep || !duplicate || !areCompatibleOpenCycleTypes(keep.type, duplicate.type)) {
+      return null;
+    }
+
+    const similarity = titleSimilarity(toComparableTokens(keep.title), toComparableTokens(duplicate.title));
+    if (similarity < 0.86) {
+      return null;
+    }
+
+    const updated = await tx.openCycle.update({
+      where: { id: keep.id },
+      data: {
+        type: chooseType(keep.type, duplicate.type),
+        title: chooseTitle(keep.title, duplicate.title),
+        context: keep.context ?? duplicate.context,
+        area: keep.area ?? duplicate.area,
+        urgency: maxNullable(keep.urgency, duplicate.urgency),
+        importance: maxNullable(keep.importance, duplicate.importance),
+        energy: minNullable(keep.energy, duplicate.energy),
+        estimatedMinutes: keep.estimatedMinutes ?? duplicate.estimatedMinutes,
+        dueDate: keep.dueDate ?? duplicate.dueDate,
+        reason: keep.reason ?? duplicate.reason,
+        rawInput: appendRawInput(keep.rawInput, duplicate.rawInput ?? undefined),
+        rawOutput: JSON.parse(JSON.stringify({
+          previous: keep.rawOutput ?? null,
+          mergedDuplicate: duplicate.rawOutput ?? null,
+          dedupe: {
+            duplicateOpenCycleId: duplicate.id,
+            duplicateTitle: duplicate.title,
+            similarity
+          }
+        }))
+      }
+    });
+
+    await tx.openCycle.update({
+      where: { id: duplicate.id },
+      data: { closedAt: new Date() }
+    });
+
+    return {
+      keep: updated,
+      duplicate,
+      score: similarity
+    };
+  });
+}
 
 type SimilarOpenCycle = {
   id: string;
@@ -310,6 +467,41 @@ function getCompatibleTypes(type: OpenCycleDraft["type"]): OpenCycleType[] {
   }
 
   return [toPrismaOpenCycleType(type)];
+}
+
+function areCompatibleOpenCycleTypes(left: OpenCycleType, right: OpenCycleType): boolean {
+  if ((left === OpenCycleType.TASK || left === OpenCycleType.PURCHASE) && (right === OpenCycleType.TASK || right === OpenCycleType.PURCHASE)) {
+    return true;
+  }
+
+  return left === right;
+}
+
+function buildDuplicatePair(left: DuplicateOpenCycle, right: DuplicateOpenCycle, score: number): DuplicateOpenCyclePair {
+  const keep = chooseDuplicateKeeper(left, right);
+  const duplicate = keep.id === left.id ? right : left;
+
+  return {
+    keep,
+    duplicate,
+    score
+  };
+}
+
+function chooseDuplicateKeeper(left: DuplicateOpenCycle, right: DuplicateOpenCycle): DuplicateOpenCycle {
+  const leftHasDueDate = left.dueDate ? 1 : 0;
+  const rightHasDueDate = right.dueDate ? 1 : 0;
+  if (leftHasDueDate !== rightHasDueDate) {
+    return leftHasDueDate > rightHasDueDate ? left : right;
+  }
+
+  const leftScore = (left.urgency ?? 0) + (left.importance ?? 0);
+  const rightScore = (right.urgency ?? 0) + (right.importance ?? 0);
+  if (leftScore !== rightScore) {
+    return leftScore > rightScore ? left : right;
+  }
+
+  return left.createdAt <= right.createdAt ? left : right;
 }
 
 function toComparableTokens(title: string): string[] {
