@@ -199,3 +199,37 @@ Railway -> Node.js/grammY long polling -> Supabase/Postgres
 Ограничение:
 
 Оригинальный аудиофайл пока не сохраняется как долговременный `Asset`. Это будет отдельным этапом, когда появится потребность хранить исходники, а не только распознанный текст.
+## MVP Checkpoint 9. Telegram Mini App architecture
+
+Статус: спроектировано, не реализовано.
+
+Что зафиксировано:
+
+- Telegram bot остается быстрым каналом capture;
+- Telegram Mini App будет визуальным интерфейсом для Today View, Morning Focus, OpenCycles, Contexts, Mental Load Dashboard и Settings;
+- Bot и Mini App должны использовать один Memory Core и одну Supabase/Postgres базу;
+- Mini App должен работать через минимальный API, а не напрямую через Prisma;
+- полноценный frontend пока не создается.
+
+Следующий минимальный шаг:
+
+- создать `src/memory/views.ts`;
+- реализовать `buildTodayView(userId)` без LLM;
+- затем добавить `GET /api/today`;
+- только после этого делать простой placeholder Mini App.
+## MVP Checkpoint 10. Morning Focus Builder
+
+Статус: реализовано в первом rule-based варианте.
+
+Что сделано:
+
+- добавлен `src/memory/morningFocus.ts`;
+- реализован `buildMorningFocus(userId)`;
+- builder берет открытые циклы и строит Today View;
+- добавлена Telegram-команда `/today` для проверки результата до Mini App;
+- результат делится на главный фокус, сделать сегодня, если останется время и можно не держать в голове;
+- builder возвращает объяснение выбора.
+
+Следующий минимальный шаг:
+
+Добавить `GET /api/today`, который будет возвращать результат `buildMorningFocus(userId)` для будущей Telegram Mini App.

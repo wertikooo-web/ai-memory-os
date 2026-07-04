@@ -403,3 +403,63 @@ Telegram voice
 Главное правило сохраняется: после транскрибации вся система работает с текстом. Memory Core не должен знать, пришёл текст из ручного ввода или из голосового сообщения.
 
 На текущем MVP аудиофайл не сохраняется в Supabase Storage. Это осознанное упрощение: сначала проверяем ежедневный UX голосового capture, а хранение оригинальных Asset добавим позже, когда появится реальная необходимость.
+## Telegram Mini App Boundary
+
+Telegram Mini App будет визуальным интерфейсом к тому же Memory Core, который использует Telegram bot.
+
+Принцип:
+
+```text
+Telegram Bot -> Memory Core -> Supabase/Postgres
+Mini App     -> API         -> Memory Core -> Supabase/Postgres
+```
+
+Bot отвечает за быстрый capture: текст, голос, будущие фото и ссылки.
+Mini App отвечает за визуальное управление mental load: Today View, Morning Focus, OpenCycles, Contexts и Settings.
+
+Бизнес-логика не должна дублироваться между `src/telegram` и будущим Mini App. Общие операции должны выноситься в reusable functions внутри `src/memory`:
+
+```text
+buildTodayView(userId)
+getOpenCycles(userId)
+getContexts(userId)
+markCycleDone(userId, cycleId)
+moveCycleToContext(userId, cycleId, contextId)
+buildMorningFocus(userId)
+```
+
+Для текущей структуры проекта безопаснее не переходить сразу на monorepo `apps/*`. Сначала достаточно добавить будущие границы:
+
+```text
+src/api/        # будущий тонкий API слой для Mini App
+src/memory/     # общее ядро
+src/telegram/   # Telegram bot interface
+web/miniapp/    # будущий frontend Mini App
+```
+
+Подробный дизайн: `docs/MINI_APP.md`.
+## Morning Focus Builder
+
+Morning Focus Builder является первым ядром Today View.
+
+Граница:
+
+```text
+OpenCycles + Contexts
+  -> buildMorningFocus(userId)
+  -> Today View
+  -> Telegram / API / Mini App
+```
+
+Builder живет в `src/memory/morningFocus.ts`, а не в Telegram handler и не в будущем Mini App. Это гарантирует, что все интерфейсы показывают один и тот же фокус дня.
+
+Первый MVP builder является rule-based:
+
+- учитывает urgency;
+- учитывает importance;
+- учитывает dueDate;
+- повышает приоритет обещаний и задач;
+- отделяет главный фокус от второстепенных циклов;
+- оставляет часть циклов в секции "можно не держать в голове".
+
+LLM можно подключить позже, но только как улучшение объяснения и ранжирования, а не как единственный источник истины.

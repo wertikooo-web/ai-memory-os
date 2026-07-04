@@ -450,3 +450,26 @@ Telegram voice
 ```env
 OPENAI_TRANSCRIPTION_MODEL="whisper-1"
 ```
+## Morning Focus / Today View
+
+Добавлена команда:
+
+```text
+/today
+```
+
+Она строит первый Morning Focus из открытых циклов:
+
+- главный фокус дня;
+- сделать сегодня;
+- если останется время;
+- можно не держать в голове;
+- объяснение, почему выбрано именно так.
+
+Это не отдельная Telegram-логика. Команда использует shared Memory Core функцию:
+
+```text
+src/memory/morningFocus.ts -> buildMorningFocus(userId)
+```
+
+Позже этот же builder должен использовать API и Telegram Mini App.

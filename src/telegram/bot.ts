@@ -3,6 +3,7 @@ import { transcribeVoice } from "../ai/transcribeVoice.js";
 import { config } from "../config.js";
 import { listLifeEvents } from "../memory/events.js";
 import { ingestTelegramText } from "../memory/ingest.js";
+import { buildMorningFocus, type MorningFocusCycle, type MorningFocusView } from "../memory/morningFocus.js";
 import { deleteLastMemoryItem, deleteMemoryItemByIdForUser, getLastMemoryItem } from "../memory/items.js";
 import { closeLastOpenCycle, listOpenCycles } from "../memory/openCycles.js";
 import { reclassifyLastMemoryItem } from "../memory/reclassify.js";
@@ -54,6 +55,19 @@ export function createTelegramBot() {
     });
   });
 
+  bot.command("today", async (ctx) => {
+    if (!ctx.from) {
+      await ctx.reply("Не удалось определить пользователя.");
+      return;
+    }
+
+    const user = await getOrCreateUser(ctx.from);
+    const view = await buildMorningFocus(user.id);
+
+    await ctx.reply(formatMorningFocusView(view), {
+      reply_markup: mainKeyboard
+    });
+  });
   bot.command("events", async (ctx) => {
     if (!ctx.from) {
       await ctx.reply("Не удалось определить пользователя.");
@@ -397,6 +411,52 @@ function buildIngestReply(result: IngestResult): string[] {
   return lines;
 }
 
+
+function formatMorningFocusView(view: MorningFocusView): string {
+  const lines = [
+    "Сегодня",
+    view.date,
+    "",
+    view.mentalLoad.status,
+    "",
+    "Главный фокус дня",
+    view.mainFocus ? formatFocusCycle(view.mainFocus) : "Пока нет главного фокуса.",
+    "",
+    "Сделать сегодня",
+    formatFocusList(view.today, "На сегодня ничего не выбрано."),
+    "",
+    "Если останется время",
+    formatFocusList(view.later, "Можно оставить пустым."),
+    "",
+    "Можно не держать в голове",
+    formatFocusList(view.offloaded, "Пока нечего разгружать."),
+    "",
+    "Почему так",
+    ...view.explanation.map((line) => `- ${line}`)
+  ];
+
+  return lines.join("\n");
+}
+
+function formatFocusList(cycles: MorningFocusCycle[], emptyText: string): string {
+  if (cycles.length === 0) {
+    return emptyText;
+  }
+
+  return cycles.map((cycle, index) => `${index + 1}. ${formatFocusCycle(cycle)}`).join("\n");
+}
+
+function formatFocusCycle(cycle: MorningFocusCycle): string {
+  const details = [
+    formatOpenCycleType(cycle.type),
+    cycle.context ? `контекст: ${cycle.context}` : null,
+    cycle.dueDate ? `срок: ${cycle.dueDate.toLocaleDateString("ru-RU")}` : null,
+    cycle.urgency ? `срочность ${cycle.urgency}` : null,
+    cycle.importance ? `важность ${cycle.importance}` : null
+  ].filter(Boolean);
+
+  return `${cycle.title}${details.length > 0 ? ` (${details.join(" · ")})` : ""}`;
+}
 function buildDeleteConfirmationKeyboard(memoryItemId: string) {
   return new InlineKeyboard()
     .text("✅ Да, удалить", `delete_memory:yes:${memoryItemId}`)

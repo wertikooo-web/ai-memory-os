@@ -18,6 +18,7 @@ async function main() {
 
   await bot.api.setMyCommands([
     { command: "start", description: "Активировать AI Memory OS" },
+    { command: "today", description: "Показать Morning Focus" },
     { command: "events", description: "Показать события" },
     { command: "last", description: "Показать последнюю запись" },
     { command: "open_cycles", description: "Показать открытые циклы" },
