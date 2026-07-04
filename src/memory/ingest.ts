@@ -3,8 +3,9 @@ import { classifyIntent } from "../ai/classifyIntent.js";
 import type { NaturalIntentDraft, OpenCycleDraft } from "../ai/types.js";
 import { shouldClassifyWithLlm } from "../config.js";
 import { normalizeInput } from "../input/normalize.js";
-import { getMemoryItemByOpenCycleId, saveTextMemoryItem } from "./items.js";
+import { getMemoryItemByOpenCycleId, moveMemoryItemToLifeEvent, saveTextMemoryItem } from "./items.js";
 import { closeOpenCycleById, listRecentOpenCyclesForIntent, saveOrUpdateSimilarOpenCycle } from "./openCycles.js";
+import { applyProjectContext } from "./projectContext.js";
 
 export type DeleteCandidate = {
   memoryItemId: string;
@@ -55,7 +56,7 @@ export async function ingestTelegramText(params: {
     telegramMessageId: params.telegramMessageId
   });
 
-  const lifeEventName = memoryItem.lifeEvent.name;
+  let lifeEventName = memoryItem.lifeEvent.name;
 
   if (!shouldClassifyWithLlm()) {
     return buildResult({
@@ -139,10 +140,20 @@ export async function ingestTelegramText(params: {
     }
 
     if (intent.intent === "CREATE_OPEN_CYCLE") {
-      const draft = await classifyInput({
+      const classifiedDraft = await classifyInput({
         text: normalized.text,
         locale: normalized.language ?? "ru"
       });
+      const draft = applyProjectContext(classifiedDraft, normalized.text);
+
+      if (draft.context) {
+        await moveMemoryItemToLifeEvent({
+          userId: params.userId,
+          memoryItemId: memoryItem.id,
+          lifeEventName: draft.context
+        });
+        lifeEventName = draft.context;
+      }
 
       const openCycleResult = await saveOrUpdateSimilarOpenCycle({
         userId: params.userId,

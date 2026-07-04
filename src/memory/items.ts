@@ -1,6 +1,6 @@
 import { MemoryItemType } from "@prisma/client";
 import { prisma } from "../db/prisma.js";
-import { getOrCreateInboxEvent } from "./events.js";
+import { getOrCreateInboxEvent, getOrCreateLifeEvent } from "./events.js";
 
 export async function saveTextMemoryItem(params: {
   userId: string;
@@ -49,6 +49,31 @@ export async function getMemoryItemByOpenCycleId(params: { userId: string; openC
   });
 
   return cycle?.memoryItem ?? null;
+}
+
+export async function moveMemoryItemToLifeEvent(params: {
+  userId: string;
+  memoryItemId: string;
+  lifeEventName: string | null;
+}) {
+  if (!params.lifeEventName) {
+    return null;
+  }
+
+  const lifeEvent = await getOrCreateLifeEvent({
+    userId: params.userId,
+    name: params.lifeEventName
+  });
+
+  return prisma.memoryItem.updateMany({
+    where: {
+      id: params.memoryItemId,
+      userId: params.userId
+    },
+    data: {
+      lifeEventId: lifeEvent.id
+    }
+  });
 }
 
 export async function deleteMemoryItemByIdForUser(params: { userId: string; memoryItemId: string }) {

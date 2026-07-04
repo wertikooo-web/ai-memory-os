@@ -433,28 +433,28 @@ function buildIngestReply(result: IngestResult): string[] {
 
   if (result.classificationStatus === "close_target_not_found") {
     return [
-      `✅ Запомнил в ${result.lifeEventName}.`,
+      "✅ Запомнил.",
       "🧠 Похоже, ты говоришь о завершении дела, но я не нашёл подходящий открытый цикл."
     ];
   }
 
   if (result.classificationStatus === "delete_candidate_not_found") {
     return [
-      `✅ Запомнил в ${result.lifeEventName}.`,
+      "✅ Запомнил.",
       "🧠 Понял, что ты хочешь удалить запись, но не нашёл достаточно похожую. Пока ничего не удаляю."
     ];
   }
 
   if (result.classificationStatus === "memory_only") {
     return [
-      `✅ Запомнил в ${result.lifeEventName}.`,
+      "✅ Запомнил.",
       "🧠 Понял: это заметка, без открытого цикла."
     ];
   }
 
   if (result.classificationStatus === "unsupported_intent" && result.intent) {
     return [
-      `✅ Запомнил в ${result.lifeEventName}.`,
+      "✅ Запомнил.",
       `🧠 Понял намерение: ${formatNaturalIntent(result.intent.intent)}.`,
       "Пока я сохраняю такие фразы безопасно, без автоматического изменения старых записей."
     ];
@@ -463,14 +463,18 @@ function buildIngestReply(result: IngestResult): string[] {
   if (result.classificationStatus === "updated" && result.updatedCycleTitle) {
     return [
       `✅ Обновил существующий цикл: ${result.updatedCycleTitle}.`,
-      `✅ Запомнил в ${result.lifeEventName}.`,
-      result.openCycle ? `🧠 Понял как: ${formatOpenCycleType(result.openCycle.type)}.` : null
+      "✅ Запомнил.",
+      result.openCycle ? `🧠 Понял как: ${formatOpenCycleType(result.openCycle.type)}.` : null,
+      result.openCycle?.context ? `Контекст: ${result.openCycle.context}` : null
     ].filter(Boolean) as string[];
   }
-  const lines = [`✅ Запомнил в ${result.lifeEventName}.`];
+  const lines = ["✅ Запомнил."];
 
   if (result.classificationStatus === "saved" && result.openCycle) {
     lines.push(`🧠 Понял как: ${formatOpenCycleType(result.openCycle.type)}.`);
+    if (result.openCycle.context) {
+      lines.push(`Контекст: ${result.openCycle.context}`);
+    }
   }
 
   if (result.classificationStatus === "failed") {

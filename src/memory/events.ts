@@ -1,17 +1,24 @@
 import { prisma } from "../db/prisma.js";
 
 export async function getOrCreateInboxEvent(userId: string) {
+  return getOrCreateLifeEvent({
+    userId,
+    name: "Inbox"
+  });
+}
+
+export async function getOrCreateLifeEvent(params: { userId: string; name: string }) {
   return prisma.lifeEvent.upsert({
     where: {
       userId_name: {
-        userId,
-        name: "Inbox"
+        userId: params.userId,
+        name: params.name
       }
     },
     update: {},
     create: {
-      userId,
-      name: "Inbox"
+      userId: params.userId,
+      name: params.name
     }
   });
 }
