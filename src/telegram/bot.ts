@@ -1,4 +1,5 @@
 import { Bot, InlineKeyboard, Keyboard } from "grammy";
+import { transcribeVoice } from "../ai/transcribeVoice.js";
 import { config } from "../config.js";
 import { listLifeEvents } from "../memory/events.js";
 import { ingestTelegramText } from "../memory/ingest.js";
@@ -85,7 +86,7 @@ export function createTelegramBot() {
     const cycles = await listOpenCycles(user.id, 10);
 
     if (cycles.length === 0) {
-      await ctx.reply("Открытых циклов пока нет. Отправь текст, и я попробую его разобрать.", {
+      await ctx.reply("Открытых циклов пока нет. Отправь текст или голос, и я попробую его разобрать.", {
         reply_markup: mainKeyboard
       });
       return;
@@ -207,9 +208,59 @@ export function createTelegramBot() {
   });
 
   bot.on("message:voice", async (ctx) => {
-    await ctx.reply("🎤 Голос получил. Транскрибация будет позже.", {
-      reply_markup: mainKeyboard
-    });
+    if (!ctx.from) {
+      await ctx.reply("Не удалось определить пользователя.");
+      return;
+    }
+
+    try {
+      await ctx.api.sendChatAction(ctx.chat.id, "typing");
+
+      const user = await getOrCreateUser(ctx.from);
+      const audio = await downloadTelegramVoice(ctx.message.voice.file_id, ctx.message.voice.mime_type ?? "audio/ogg");
+      const text = await transcribeVoice({
+        audio: audio.data,
+        fileName: audio.fileName,
+        mimeType: audio.mimeType,
+        language: ctx.from.language_code?.startsWith("ru") ? "ru" : undefined
+      });
+
+      const result = await ingestTelegramText({
+        userId: user.id,
+        text,
+        telegramMessageId: ctx.message.message_id
+      });
+
+      if (result.classificationStatus === "delete_confirmation" && result.deleteCandidate) {
+        await ctx.reply([
+          "🎤 Распознал:",
+          shorten(text, 700),
+          "",
+          "Нашёл запись:",
+          "",
+          shorten(result.deleteCandidate.content, 500),
+          "",
+          "Удалить?"
+        ].join("\n"), {
+          reply_markup: buildDeleteConfirmationKeyboard(result.deleteCandidate.memoryItemId)
+        });
+        return;
+      }
+
+      await ctx.reply([
+        "🎤 Распознал:",
+        shorten(text, 700),
+        "",
+        ...buildIngestReply(result)
+      ].join("\n"), {
+        reply_markup: mainKeyboard
+      });
+    } catch (error) {
+      console.error("Voice transcription failed:", error);
+      await ctx.reply("🎤 Голос получил, но не смог распознать. Попробуй ещё раз или отправь текстом.", {
+        reply_markup: mainKeyboard
+      });
+    }
   });
 
   bot.on("message:text", async (ctx) => {
@@ -258,6 +309,43 @@ export function createTelegramBot() {
 }
 
 type IngestResult = Awaited<ReturnType<typeof ingestTelegramText>>;
+
+type DownloadedVoice = {
+  data: ArrayBuffer;
+  fileName: string;
+  mimeType: string;
+};
+
+async function downloadTelegramVoice(fileId: string, mimeType: string): Promise<DownloadedVoice> {
+  const file = await fetch(`https://api.telegram.org/bot${config.telegramBotToken}/getFile?file_id=${encodeURIComponent(fileId)}`);
+
+  if (!file.ok) {
+    const errorText = await file.text();
+    throw new Error(`Telegram getFile failed: ${file.status} ${errorText}`);
+  }
+
+  const fileData = (await file.json()) as { ok?: boolean; result?: { file_path?: string } };
+  const filePath = fileData.result?.file_path;
+
+  if (!fileData.ok || !filePath) {
+    throw new Error("Telegram getFile did not return file_path.");
+  }
+
+  const response = await fetch(`https://api.telegram.org/file/bot${config.telegramBotToken}/${filePath}`);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Telegram file download failed: ${response.status} ${errorText}`);
+  }
+
+  const extension = filePath.split(".").pop() ?? "ogg";
+
+  return {
+    data: await response.arrayBuffer(),
+    fileName: `telegram-voice.${extension}`,
+    mimeType
+  };
+}
 
 function buildIngestReply(result: IngestResult): string[] {
   if (result.classificationStatus === "closed" && result.closedCycleTitle) {

@@ -9,6 +9,7 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL?.trim() ?? "",
   openAiApiKey: process.env.OPENAI_API_KEY?.trim() ?? process.env.OPENAI?.trim() ?? "",
   openAiModel: process.env.OPENAI_MODEL?.trim() ?? "gpt-4.1-mini",
+  openAiTranscriptionModel: process.env.OPENAI_TRANSCRIPTION_MODEL?.trim() ?? "whisper-1",
   llmClassificationEnabled: readBooleanEnv(process.env.LLM_CLASSIFICATION_ENABLED)
 };
 
