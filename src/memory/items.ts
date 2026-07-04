@@ -33,6 +33,56 @@ export async function getLastMemoryItem(userId: string) {
   });
 }
 
+export async function getMemoryItemByOpenCycleId(params: { userId: string; openCycleId: string }) {
+  const cycle = await prisma.openCycle.findFirst({
+    where: {
+      id: params.openCycleId,
+      userId: params.userId
+    },
+    include: {
+      memoryItem: {
+        include: {
+          lifeEvent: true
+        }
+      }
+    }
+  });
+
+  return cycle?.memoryItem ?? null;
+}
+
+export async function deleteMemoryItemByIdForUser(params: { userId: string; memoryItemId: string }) {
+  const item = await prisma.memoryItem.findFirst({
+    where: {
+      id: params.memoryItemId,
+      userId: params.userId
+    },
+    include: {
+      lifeEvent: true,
+      openCycle: true
+    }
+  });
+
+  if (!item) {
+    return null;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.openCycle.deleteMany({
+      where: {
+        memoryItemId: item.id,
+        userId: params.userId
+      }
+    });
+
+    await tx.memoryItem.delete({
+      where: { id: item.id }
+    });
+  });
+
+  return item;
+}
+
 export async function deleteLastMemoryItem(userId: string) {
   const lastItem = await getLastMemoryItem(userId);
 
@@ -40,8 +90,9 @@ export async function deleteLastMemoryItem(userId: string) {
     return null;
   }
 
-  await prisma.memoryItem.delete({
-    where: { id: lastItem.id }
+  await deleteMemoryItemByIdForUser({
+    userId,
+    memoryItemId: lastItem.id
   });
 
   return lastItem;

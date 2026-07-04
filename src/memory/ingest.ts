@@ -3,16 +3,32 @@ import { classifyIntent } from "../ai/classifyIntent.js";
 import type { NaturalIntentDraft, OpenCycleDraft } from "../ai/types.js";
 import { shouldClassifyWithLlm } from "../config.js";
 import { normalizeInput } from "../input/normalize.js";
-import { saveTextMemoryItem } from "./items.js";
+import { getMemoryItemByOpenCycleId, saveTextMemoryItem } from "./items.js";
 import { closeOpenCycleById, listRecentOpenCyclesForIntent, saveOpenCycle } from "./openCycles.js";
+
+export type DeleteCandidate = {
+  memoryItemId: string;
+  title: string;
+  content: string;
+};
 
 export type TextIngestResult = {
   memoryItemId: string;
   lifeEventName: string;
   openCycle: OpenCycleDraft | null;
   closedCycleTitle: string | null;
+  deleteCandidate: DeleteCandidate | null;
   intent: NaturalIntentDraft | null;
-  classificationStatus: "disabled" | "saved" | "closed" | "close_target_not_found" | "memory_only" | "unsupported_intent" | "failed";
+  classificationStatus:
+    | "disabled"
+    | "saved"
+    | "closed"
+    | "close_target_not_found"
+    | "delete_confirmation"
+    | "delete_candidate_not_found"
+    | "memory_only"
+    | "unsupported_intent"
+    | "failed";
 };
 
 export async function ingestTelegramText(params: {
@@ -40,14 +56,11 @@ export async function ingestTelegramText(params: {
   const lifeEventName = memoryItem.lifeEvent.name;
 
   if (!shouldClassifyWithLlm()) {
-    return {
+    return buildResult({
       memoryItemId: memoryItem.id,
       lifeEventName,
-      openCycle: null,
-      closedCycleTitle: null,
-      intent: null,
       classificationStatus: "disabled"
-    };
+    });
   }
 
   try {
@@ -65,37 +78,62 @@ export async function ingestTelegramText(params: {
       });
 
       if (closed) {
-        return {
+        return buildResult({
           memoryItemId: memoryItem.id,
           lifeEventName,
-          openCycle: null,
           closedCycleTitle: closed.title,
           intent,
           classificationStatus: "closed"
-        };
+        });
       }
     }
 
     if (intent.intent === "CLOSE_OPEN_CYCLE") {
-      return {
+      return buildResult({
         memoryItemId: memoryItem.id,
         lifeEventName,
-        openCycle: null,
-        closedCycleTitle: null,
         intent,
         classificationStatus: "close_target_not_found"
-      };
+      });
+    }
+
+    if (intent.intent === "DELETE_MEMORY") {
+      if (intent.targetOpenCycleId) {
+        const candidate = await getMemoryItemByOpenCycleId({
+          userId: params.userId,
+          openCycleId: intent.targetOpenCycleId
+        });
+
+        if (candidate) {
+          return buildResult({
+            memoryItemId: memoryItem.id,
+            lifeEventName,
+            deleteCandidate: {
+              memoryItemId: candidate.id,
+              title: intent.targetTitle ?? candidate.content,
+              content: candidate.content
+            },
+            intent,
+            classificationStatus: "delete_confirmation"
+          });
+        }
+      }
+
+      return buildResult({
+        memoryItemId: memoryItem.id,
+        lifeEventName,
+        intent,
+        classificationStatus: "delete_candidate_not_found"
+      });
     }
 
     if (intent.intent === "CREATE_MEMORY" || intent.intent === "UNKNOWN") {
-      return {
+      return buildResult({
         memoryItemId: memoryItem.id,
         lifeEventName,
-        openCycle: null,
-        closedCycleTitle: null,
         intent,
         classificationStatus: "memory_only"
-      };
+      });
     }
 
     if (intent.intent === "CREATE_OPEN_CYCLE") {
@@ -115,34 +153,48 @@ export async function ingestTelegramText(params: {
         }
       });
 
-      return {
+      return buildResult({
         memoryItemId: memoryItem.id,
         lifeEventName,
         openCycle: draft,
-        closedCycleTitle: null,
         intent,
         classificationStatus: "saved"
-      };
+      });
     }
 
-    return {
+    return buildResult({
       memoryItemId: memoryItem.id,
       lifeEventName,
-      openCycle: null,
-      closedCycleTitle: null,
       intent,
       classificationStatus: "unsupported_intent"
-    };
+    });
   } catch (error) {
     console.error("LLM intent/classification failed after MemoryItem save:", error);
 
-    return {
+    return buildResult({
       memoryItemId: memoryItem.id,
       lifeEventName,
-      openCycle: null,
-      closedCycleTitle: null,
-      intent: null,
       classificationStatus: "failed"
-    };
+    });
   }
+}
+
+function buildResult(params: {
+  memoryItemId: string;
+  lifeEventName: string;
+  openCycle?: OpenCycleDraft | null;
+  closedCycleTitle?: string | null;
+  deleteCandidate?: DeleteCandidate | null;
+  intent?: NaturalIntentDraft | null;
+  classificationStatus: TextIngestResult["classificationStatus"];
+}): TextIngestResult {
+  return {
+    memoryItemId: params.memoryItemId,
+    lifeEventName: params.lifeEventName,
+    openCycle: params.openCycle ?? null,
+    closedCycleTitle: params.closedCycleTitle ?? null,
+    deleteCandidate: params.deleteCandidate ?? null,
+    intent: params.intent ?? null,
+    classificationStatus: params.classificationStatus
+  };
 }

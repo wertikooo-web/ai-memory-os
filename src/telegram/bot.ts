@@ -1,8 +1,8 @@
-import { Bot, Keyboard } from "grammy";
+import { Bot, InlineKeyboard, Keyboard } from "grammy";
 import { config } from "../config.js";
 import { listLifeEvents } from "../memory/events.js";
 import { ingestTelegramText } from "../memory/ingest.js";
-import { deleteLastMemoryItem, getLastMemoryItem } from "../memory/items.js";
+import { deleteLastMemoryItem, deleteMemoryItemByIdForUser, getLastMemoryItem } from "../memory/items.js";
 import { closeLastOpenCycle, listOpenCycles } from "../memory/openCycles.js";
 import { reclassifyLastMemoryItem } from "../memory/reclassify.js";
 import { getOrCreateUser } from "../memory/users.js";
@@ -173,6 +173,39 @@ export function createTelegramBot() {
     });
   });
 
+  bot.callbackQuery(/^delete_memory:yes:/, async (ctx) => {
+    if (!ctx.from) {
+      await ctx.answerCallbackQuery("Не удалось определить пользователя.");
+      return;
+    }
+
+    const memoryItemId = parseCallbackId(ctx.callbackQuery.data, "delete_memory:yes:");
+    if (!memoryItemId) {
+      await ctx.answerCallbackQuery("Не понял, что удалять.");
+      return;
+    }
+
+    const user = await getOrCreateUser(ctx.from);
+    const deleted = await deleteMemoryItemByIdForUser({
+      userId: user.id,
+      memoryItemId
+    });
+
+    if (!deleted) {
+      await ctx.answerCallbackQuery("Запись уже удалена или не найдена.");
+      await ctx.editMessageText("Запись уже удалена или не найдена.").catch(() => undefined);
+      return;
+    }
+
+    await ctx.answerCallbackQuery("Удалено.");
+    await ctx.editMessageText(`🗑 Удалил: ${shorten(deleted.content, 160)}`).catch(() => undefined);
+  });
+
+  bot.callbackQuery(/^delete_memory:no:/, async (ctx) => {
+    await ctx.answerCallbackQuery("Отменено.");
+    await ctx.editMessageText("Ок, не удаляю.").catch(() => undefined);
+  });
+
   bot.on("message:voice", async (ctx) => {
     await ctx.reply("🎤 Голос получил. Транскрибация будет позже.", {
       reply_markup: mainKeyboard
@@ -196,6 +229,19 @@ export function createTelegramBot() {
       text: ctx.message.text,
       telegramMessageId: ctx.message.message_id
     });
+
+    if (result.classificationStatus === "delete_confirmation" && result.deleteCandidate) {
+      await ctx.reply([
+        "Нашёл запись:",
+        "",
+        shorten(result.deleteCandidate.content, 500),
+        "",
+        "Удалить?"
+      ].join("\n"), {
+        reply_markup: buildDeleteConfirmationKeyboard(result.deleteCandidate.memoryItemId)
+      });
+      return;
+    }
 
     const replyLines = buildIngestReply(result);
 
@@ -228,6 +274,13 @@ function buildIngestReply(result: IngestResult): string[] {
     ];
   }
 
+  if (result.classificationStatus === "delete_candidate_not_found") {
+    return [
+      `✅ Запомнил в ${result.lifeEventName}.`,
+      "🧠 Понял, что ты хочешь удалить запись, но не нашёл достаточно похожую. Пока ничего не удаляю."
+    ];
+  }
+
   if (result.classificationStatus === "memory_only") {
     return [
       `✅ Запомнил в ${result.lifeEventName}.`,
@@ -239,7 +292,7 @@ function buildIngestReply(result: IngestResult): string[] {
     return [
       `✅ Запомнил в ${result.lifeEventName}.`,
       `🧠 Понял намерение: ${formatNaturalIntent(result.intent.intent)}.`,
-      "Пока я сохраняю такие фразы безопасно, без автоматического удаления или изменения старых записей."
+      "Пока я сохраняю такие фразы безопасно, без автоматического изменения старых записей."
     ];
   }
 
@@ -254,6 +307,21 @@ function buildIngestReply(result: IngestResult): string[] {
   }
 
   return lines;
+}
+
+function buildDeleteConfirmationKeyboard(memoryItemId: string) {
+  return new InlineKeyboard()
+    .text("✅ Да, удалить", `delete_memory:yes:${memoryItemId}`)
+    .text("❌ Нет", `delete_memory:no:${memoryItemId}`);
+}
+
+function parseCallbackId(data: string, prefix: string): string | null {
+  if (!data.startsWith(prefix)) {
+    return null;
+  }
+
+  const value = data.slice(prefix.length).trim();
+  return value.length > 0 ? value : null;
 }
 
 function formatOpenCycleLine(index: number, cycle: Awaited<ReturnType<typeof listOpenCycles>>[number]): string {
@@ -305,4 +373,12 @@ function formatNaturalIntent(intent: string): string {
   };
 
   return labels[intent] ?? "непонятно";
+}
+
+function shorten(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength - 1)}…`;
 }
