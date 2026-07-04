@@ -5,7 +5,7 @@ import { shouldClassifyWithLlm } from "../config.js";
 import { normalizeInput } from "../input/normalize.js";
 import { getMemoryItemByOpenCycleId, moveMemoryItemToLifeEvent, saveTextMemoryItem } from "./items.js";
 import { closeOpenCycleById, listRecentOpenCyclesForIntent, saveOrUpdateSimilarOpenCycle } from "./openCycles.js";
-import { applyProjectContext } from "./projectContext.js";
+import { applyProjectContext, detectProjectContext } from "./projectContext.js";
 
 export type DeleteCandidate = {
   memoryItemId: string;
@@ -139,7 +139,7 @@ export async function ingestTelegramText(params: {
       });
     }
 
-    if (intent.intent === "CREATE_OPEN_CYCLE") {
+    if (intent.intent === "CREATE_OPEN_CYCLE" || shouldCreateOpenCycleFromIntent(intent, normalized.text)) {
       const classifiedDraft = await classifyInput({
         text: normalized.text,
         locale: normalized.language ?? "ru"
@@ -191,6 +191,42 @@ export async function ingestTelegramText(params: {
       classificationStatus: "failed"
     });
   }
+}
+
+function shouldCreateOpenCycleFromIntent(intent: NaturalIntentDraft, text: string): boolean {
+  if (!["UPDATE_MEMORY", "MOVE_TO_CONTEXT"].includes(intent.intent)) {
+    return false;
+  }
+
+  if (intent.targetOpenCycleId) {
+    return false;
+  }
+
+  return hasActionLanguage(text) || detectProjectContext(text) !== null;
+}
+
+function hasActionLanguage(text: string): boolean {
+  const normalized = text.toLowerCase().replaceAll("ё", "е");
+
+  return [
+    "надо ",
+    "нужно ",
+    "поправить",
+    "исправить",
+    "сделать",
+    "доделать",
+    "дописать",
+    "подготовить",
+    "написать",
+    "обновить",
+    "проверить",
+    "разобрать",
+    "добавить",
+    "убрать",
+    "создать",
+    "позвонить",
+    "ответить"
+  ].some((marker) => normalized.includes(marker));
 }
 
 function buildResult(params: {
